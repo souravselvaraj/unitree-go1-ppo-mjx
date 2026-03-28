@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "go1-ppo"
+version = "0.1.0"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dynamic = ["description"]
+dependencies = [
+    "absl-py",
+    "brax>=0.12.5",
+    "etils",
+    "flax",
+    "jax[cuda12]",
+    "lxml",
+    "mediapy",
+    "ml_collections",
+    "mujoco-mjx>=3.4.dev",
+    "mujoco>=3.4.dev",
+    "orbax-checkpoint>=0.11.22",
+    "tensorboardX",
+    "tqdm",
+    "warp-lang>=1.12.0",
+]
+keywords = ["go1", "mujoco", "ppo", "reinforcement learning"]
+
+[[tool.uv.index]]
+name = "mujoco"
+url = "https://py.mujoco.org"
+explicit = true
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[tool.uv.sources]
+mujoco = { index = "mujoco" }
+mujoco-mjx = { git = "https://github.com/google-deepmind/mujoco", rev = "main", subdirectory = "mjx" }
+warp-lang = { index = "nvidia" }
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+learning = [
+    "wandb",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["go1_ppo"]
+
+[tool.hatch.build]
+include = [
+    "go1_ppo/**/*",
+]
