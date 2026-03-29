@@ -15,17 +15,15 @@
 """RL config for Locomotion envs."""
 
 from typing import Optional
-
 from ml_collections import config_dict
-
-from go1_ppo import registry
+from go1_ppo import locomotion
 
 
 def brax_ppo_config(
     env_name: str, impl: Optional[str] = None
 ) -> config_dict.ConfigDict:
   """Returns tuned Brax PPO config for the given environment."""
-  env_config = registry.get_default_config(env_name)
+  env_config = locomotion.get_default_config(env_name)
 
   rl_config = config_dict.create(
       num_timesteps=100_000_000,

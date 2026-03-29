@@ -11,9 +11,6 @@ from go1_ppo import mjx_env
 from go1_ppo.envs import joystick as go1_joystick
 from go1_ppo.envs import randomize as go1_randomize
 
-DomainRandomizer = Optional[
-    Callable[[mjx.Model, jax.Array], Tuple[mjx.Model, mjx.Model]]
-]
 
 _envs = {
     "Go1JoystickFlatTerrain": functools.partial(
@@ -75,7 +72,9 @@ def load(
   return _envs[env_name](config=config, config_overrides=config_overrides)
 
 
-def get_domain_randomizer(env_name: str) -> Optional[DomainRandomizer]:
+def get_domain_randomizer(
+    env_name: str,
+) -> Optional[Callable[[mjx.Model, jax.Array], Tuple[mjx.Model, mjx.Model]]]:
   """Get the default domain randomizer for an environment."""
   if env_name not in _randomizer:
     print(

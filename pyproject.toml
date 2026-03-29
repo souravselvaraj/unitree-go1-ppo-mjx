@@ -20,6 +20,8 @@ dependencies = [
     "mujoco-mjx>=3.4.dev",
     "mujoco>=3.4.dev",
     "orbax-checkpoint>=0.11.22",
+    "setuptools>=82.0.1",
+    "tensorboard>=2.20.0",
     "tensorboardX",
     "tqdm",
     "warp-lang>=1.12.0",

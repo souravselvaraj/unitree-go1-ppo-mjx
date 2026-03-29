@@ -1,0 +1,1 @@
+{"action_size": 12, "network_factory_kwargs": {}, "normalize_observations": true, "observation_size": {"privileged_state": {"shape": [123], "dtype": "unserializable object: float32"}, "state": {"shape": [48], "dtype": "unserializable object: float32"}}}
