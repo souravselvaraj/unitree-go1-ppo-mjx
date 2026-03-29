@@ -4,6 +4,27 @@ Standalone Go1 PPO workspace for MuJoCo.
 
 ## Setup
 
+Requirements:
+
+- Python 3.12
+- `uv`
+- NVIDIA GPU optional, but recommended for training
+
+Main Python dependencies:
+
+- `jax[cuda12]`
+- `brax`
+- `mujoco`
+- `mujoco-mjx`
+- `flax`
+- `ml_collections`
+- `mediapy`
+- `tensorboard`
+- `tensorboardX`
+- `warp-lang`
+
+Install:
+
 ```bash
 cd /home/sourav/skadi/go1_ppo
 uv sync
