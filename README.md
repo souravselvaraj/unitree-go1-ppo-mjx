@@ -1,6 +1,15 @@
 # go1_ppo
 
-Standalone Go1 PPO workspace for MuJoCo.
+JAX/Flax-based PPO training and teleoperation for Unitree Go1 quadruped in MuJoCo. Includes asymmetric actor-critic learning, domain randomization, and multiple terrain types.
+
+**See [modeling_section.md](modeling_section.md) for detailed environment, reward function, and training architecture documentation.**
+
+## Environments
+
+| Environment | Description |
+|---|---|
+| `Go1JoystickFlatTerrain` | Flat ground, ideal for baseline training |
+| `Go1JoystickRoughTerrain` | Randomized heightfield with Gaussian noise, tests robustness |
 
 ## Setup
 
@@ -8,63 +17,115 @@ Requirements:
 
 - Python 3.12
 - `uv`
-- NVIDIA GPU optional, but recommended for training
-
-Main Python dependencies:
-
-- `jax[cuda12]`
-- `brax`
-- `mujoco`
-- `mujoco-mjx`
-- `flax`
-- `ml_collections`
-- `mediapy`
-- `tensorboard`
-- `tensorboardX`
-- `warp-lang`
+- NVIDIA GPU recommended for training
 
 Install:
 
 ```bash
 cd /home/sourav/skadi/go1_ppo
 uv sync
-source /home/sourav/skadi/go1_ppo/.venv/bin/activate
+source .venv/bin/activate
 ```
 
-## Train
+## Training
 
-Quick test:
+Quick test (10k steps):
 
 ```bash
-python /home/sourav/skadi/go1_ppo/training/train_jax_ppo.py --env_name=Go1JoystickFlatTerrain --use_tb=True --num_timesteps=10000 --num_envs=256 --num_eval_envs=32 --num_evals=2
+python training/train_jax_ppo.py \
+  --env_name=Go1JoystickFlatTerrain \
+  --use_tb=True \
+  --num_timesteps=10000 \
+  --num_envs=256
 ```
 
-Default flat-terrain training:
+Full training (200M steps):
 
 ```bash
-python /home/sourav/skadi/go1_ppo/training/train_jax_ppo.py --env_name=Go1JoystickFlatTerrain --use_tb=True
+python training/train_jax_ppo.py \
+  --env_name=Go1JoystickFlatTerrain \
+  --use_tb=True
 ```
 
-## TensorBoard
+Rough terrain training:
 
 ```bash
-tensorboard --logdir /home/sourav/skadi/go1_ppo/logs --port 6006
+python training/train_jax_ppo.py \
+  --env_name=Go1JoystickRoughTerrain \
+  --use_tb=True
 ```
 
-Open `http://localhost:6006`
-
-## Teleop
+## Monitoring
 
 ```bash
-python /home/sourav/skadi/go1_ppo/scripts/teleop_go1_keyboard.py --run_dir /home/sourav/skadi/go1_ppo/logs/Go1JoystickFlatTerrain-YYYYMMDD-HHMMSS --deterministic
+tensorboard --logdir ./logs --port 6006
 ```
 
-Controls:
+Open `http://localhost:6006` to view live training metrics.
 
-- `w/s` forward/backward
-- `a/d` lateral
-- `q/e` yaw
-- `0` zero command
-- `space` pause
-- `r` reset
-- `x` quit
+## Teleoperation
+
+Run trained policy with keyboard control:
+
+```bash
+python scripts/teleop_go1_keyboard.py \
+  --run_dir ./logs/Go1JoystickRoughTerrain-20260425-153219/
+```
+
+The script will **prompt you to select a terrain**:
+
+```
+=== Available Environments ===
+  1. Go1JoystickFlatTerrain
+  2. Go1JoystickRoughTerrain
+
+Select environment (1-2):
+```
+
+You can also skip the prompt with `--env`:
+
+```bash
+python scripts/teleop_go1_keyboard.py \
+  --run_dir ./logs/Go1JoystickRoughTerrain-20260425-153219/ \
+  --env Go1JoystickRoughTerrain \
+  --deterministic
+```
+
+**Keyboard Controls:**
+
+| Key | Action |
+|---|---|
+| `w`/`s` | Forward/backward velocity |
+| `a`/`d` | Lateral velocity |
+| `q`/`e` | Yaw rotation |
+| `0` | Zero all commands |
+| `[`/`]` | Slower/faster playback |
+| `space` | Pause simulation |
+| `r` | Reset episode |
+| `x` | Quit |
+
+## Project Structure
+
+```
+.
+├── envs/               # Environment implementations
+│   ├── joystick.py     # Main Joystick env class & reward function
+│   ├── randomize.py    # Domain randomization
+│   └── go1_constants.py # XML paths & task definitions
+├── scene/              # MuJoCo MJCF scene files
+├── training/           # PPO training loop
+├── scripts/            # Utilities (teleop, evaluation)
+├── configs/            # Hyperparameter configs
+├── logs/               # Training checkpoints & TensorBoard events
+├── assets/             # Heightfield images for rough terrain
+├── registry.py         # Environment registration
+├── mjx_env.py          # Base MjxEnv class
+└── modeling_section.md # Detailed technical documentation
+```
+
+## Key Features
+
+- **Asymmetric Actor-Critic**: Policy sees 48-dim onboard observations; critic accesses 123-dim privileged state
+- **Domain Randomization**: Per-episode randomization of friction, inertia, CoM, mass
+- **Gait Shaping**: Foot clearance, slip, air-time, and energy penalties
+- **JAX/MJX**: Fully differentiable with `jax.vmap` for efficient 8192-parallel training

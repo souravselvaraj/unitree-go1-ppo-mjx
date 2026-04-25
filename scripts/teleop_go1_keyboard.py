@@ -166,7 +166,32 @@ def main():
 
   run_dir = Path(args.run_dir).expanduser().resolve()
   ckpt_root = (run_dir / "checkpoints").resolve()
-  env_name = args.env.strip() if args.env.strip() else run_dir.name.split("-")[0]
+  
+  # Environment selection
+  available_envs = list(registry.ALL_ENVS)
+  if args.env.strip():
+    # Use provided environment
+    env_name = args.env.strip()
+    if env_name not in available_envs:
+      raise ValueError(f"Environment '{env_name}' not found. Available: {available_envs}")
+  else:
+    # Always prompt for environment selection
+    print("\n=== Available Environments ===")
+    for i, env in enumerate(available_envs, 1):
+      print(f"  {i}. {env}")
+    
+    while True:
+      try:
+        choice = input(f"\nSelect environment (1-{len(available_envs)}): ").strip()
+        idx = int(choice) - 1
+        if 0 <= idx < len(available_envs):
+          env_name = available_envs[idx]
+          print(f"Selected: {env_name}\n")
+          break
+        else:
+          print(f"Invalid choice. Enter 1-{len(available_envs)}")
+      except ValueError:
+        print(f"Invalid input. Enter a number 1-{len(available_envs)}")
 
   if args.ckpt:
     step_dir = (ckpt_root / args.ckpt).resolve()
