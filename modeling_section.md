@@ -35,6 +35,52 @@ with 1 Newton-Euler step and 5 linear solver iterations per step. The control st
 $$\Delta t = 0.02 \text{ s},$$
 so each control action is held for 5 physics substeps. Each episode lasts 1000 control steps, corresponding to 20 seconds of simulated time. Initial positions are randomized: $\Delta x, \Delta y \sim \mathcal{U}(-0.5, 0.5)$ m and $\Delta \text{yaw} \sim \mathcal{U}(-\pi, \pi)$; initial velocities are $\in \mathcal{U}(-0.5, 0.5)$ m/s or rad/s.
 
+### Rough Terrain Environment
+
+A second terrain variant, `Go1JoystickRoughTerrain`, replaces the flat plane with a procedurally generated heightfield loaded from a PNG image (`assets/hfield.png`). The terrain is modeled as a MuJoCo `hfield` geom with world dimensions
+
+$$\text{width} \times \text{height} = 10 \times 10 \text{ m}, \quad h_{\max} = 0.05 \text{ m}, \quad \text{base depth} = 1.0 \text{ m}.$$
+
+The elevation at each grid cell is linearly mapped from the 8-bit pixel intensity (0–255) of the PNG image to the range $[0, h_{\max}]$. The surface uses a photorealistic rocky texture (Poly Haven "rock\_face") tiled at $5 \times 5$ repeats per 10 m tile.
+
+#### Floor Contact Properties
+
+The rough terrain floor geom is assigned a higher static friction coefficient
+$$\mu_{\text{rough}} = 1.0$$
+compared to $\mu_{\text{flat}} = 0.6$ on flat terrain, reflecting the greater grip of natural rocky surfaces and the geometric interlocking of foot contact points.
+
+#### Contact Solver Configuration
+
+Navigating rough terrain generates substantially more simultaneous contacts per environment step because surface normal variation causes multi-point foot–ground interactions. The MJX solver limits are therefore expanded:
+
+| Parameter | Flat Terrain | Rough Terrain |
+|---|---|---|
+| `nconmax` | $4 \times 8192 = 32{,}768$ | $8 \times 8192 = 65{,}536$ |
+| `njmax` | 40 | 60 |
+
+These limits are applied automatically in `Joystick.__init__` when the task name begins with `"rough"`. Insufficient `nconmax` causes silent contact dropping in MJX, leading to unphysical foot penetration and corrupted gradients during training; doubling the limit ensures all foot–terrain contacts are resolved at each substep.
+
+#### Terrain Generation and Geometry
+
+The heightfield PNG encodes terrain as a single-channel grayscale image. MuJoCo interprets the pixel grid as a rectangular array of elevation samples and tessellates it into triangle meshes for contact computation. Key geometric properties:
+
+- **Horizontal resolution**: determined by the PNG image dimensions (pixels per 10 m); finer resolution produces more detailed surface features.
+- **Maximum step height**: $h_{\max} = 0.05$ m (5 cm), below the nominal foot clearance target $h^\star = 0.1$ m, so individual steps are traversable but create meaningful perturbations.
+- **Base depth** (below minimum elevation): 1.0 m, ensuring the geom occupies sufficient volume to prevent tunneling at terrain edges.
+
+The robot home keyframe places the torso at $z = 0.35$ m above the heightfield reference plane (identical to flat terrain), so at episode reset the feet land at varying heights depending on spawn location within the 10 m tile.
+
+#### Gait Challenges and Behavioral Differences
+
+On rough terrain the robot must adapt its gait to four additional sources of difficulty absent on flat ground:
+
+1. **Variable foot contact heights**: ground reaction forces vary in direction and magnitude as each foot lands on differently sloped patches, exciting roll and pitch moments at the torso.
+2. **Consistent clearance under uncertainty**: the clearance term $\rho_{\text{clr}}$ and foot-height term $\rho_{\text{fh}}$ retain target height $h^\star = 0.1$ m, but achieving this requires active foot lift against surface geometry that is not directly observed by the policy.
+3. **Increased orientation disturbances**: slope-induced moments make the orientation penalty $\rho_{\text{orient}}$ (weight $-5.0$) more frequently non-zero, demanding stronger active stabilization.
+4. **Foot slip on inclined patches**: inclined surface patches create lateral components of ground reaction force; the slip penalty $\rho_{\text{slip}}$ remains active but is harder to minimize due to surface tilt.
+
+The reward function is identical to the flat-terrain variant — no terrain-specific shaping terms are added. The policy therefore implicitly learns to navigate uneven ground through the same multi-objective reward signal, relying on domain randomization (particularly floor friction $\mu \sim \mathcal{U}(0.4, 1.0)$) and the variety of hfield contact geometry to generalize.
+
 ### Sensor Suite
 
 The robot is equipped with an inertial measurement unit (IMU) located at the torso with the following sensors (sampling rate: 250 Hz, fused into state at control rate):
@@ -80,55 +126,80 @@ Throughout the model, three reference frames are used:
 
 Sensor measurements from the IMU are expressed in body frame. The transformation from body to world frame is given by the rotation matrix $R_{WB}(q_b)$ derived from the base quaternion. Linear velocities are transformed as $v^W = R_{WB} v^B$, and similarly for angular velocities and forces.
 
-The actor observation is a 48-dimensional vector
+#### Actor State Vector (Policy Input)
+
+The policy $\pi_\theta$ receives only observations that are realizable on the physical robot from onboard sensors, making the trained controller directly deployable without any simulation-only state. The actor observation is a 48-dimensional vector
 $$o_t =
-\begin{bmatrix}
-\tilde{v}_t^b \\
-\tilde{\omega}_t^b \\
-\tilde{g}_t^b \\
-\tilde{q}_{j,t} - q_j^{\text{home}} \\
-\widetilde{\dot{q}}_{j,t} \\
-a_{t-1} \\
+\bigl[
+\tilde{v}_t^b,\;
+\tilde{\omega}_t^b,\;
+\tilde{g}_t^b,\;
+\tilde{q}_{j,t} - q_j^{\text{home}},\;
+\widetilde{\dot{q}}_{j,t},\;
+a_{t-1},\;
 c_t
-\end{bmatrix}
-\in \mathbb{R}^{48},$$
-with component breakdown:
-- $\tilde{v}_t^b \in \mathbb{R}^3$ (3 dims): noisy body-frame linear velocity from IMU  
-- $\tilde{\omega}_t^b \in \mathbb{R}^3$ (3 dims): noisy gyroscope angular velocity
-- $\tilde{g}_t^b \in \mathbb{R}^3$ (3 dims): noisy gravity vector in body frame (inclinometer)
-- $\tilde{q}_{j,t} - q_j^{\text{home}} \in \mathbb{R}^{12}$ (12 dims): noisy joint positions relative to home pose
-- $\widetilde{\dot{q}}_{j,t} \in \mathbb{R}^{12}$ (12 dims): noisy joint velocities
-- $a_{t-1} \in \mathbb{R}^{12}$ (12 dims): previous action (for temporal context)
-- $c_t \in \mathbb{R}^{3}$ (3 dims): current locomotion command
+\bigr]^\top
+\in \mathbb{R}^{48}.$$
+
+Each field is described in detail below:
+
+| Index range | Field | Dims | Source | Noise added | Notes |
+|:---:|---|:---:|---|:---:|---|
+| 0–2 | $\tilde{v}_t^b$ — body-frame linear velocity | 3 | `local_linvel` sensor (MJX computed) | $\pm 0.1$ m/s | Expressed in body frame $B$. Not directly observable on real hardware (estimated via VIO or state estimator). |
+| 3–5 | $\tilde{\omega}_t^b$ — angular velocity | 3 | Gyroscope (`gyro` sensor) | $\pm 0.2$ rad/s | Body frame, measured by onboard IMU gyroscope. Directly available on real Go1. |
+| 6–8 | $\tilde{g}_t^b$ — gravity vector in body frame | 3 | Inclinometer (`gravity` derived from orientation) | $\pm 0.05$ (mag.) | Unit gravity direction expressed in body frame; encodes roll and pitch angles. $\tilde{g}_t^b \approx R_{WB}^\top [0,0,-1]^\top$ in noise-free case. |
+| 9–20 | $\tilde{q}_{j,t} - q_j^{\text{home}}$ — joint position offsets | 12 | Joint encoders (`qpos[7:]`) | $\pm 0.03$ rad | Per-joint deviation from home pose. Order: FR (abd, hip, knee), FL, RR, RL. |
+| 21–32 | $\widetilde{\dot{q}}_{j,t}$ — joint velocities | 12 | Joint velocity (`qvel[6:]`) | $\pm 1.5$ rad/s | Per-joint angular velocity. High noise scale reflects encoder differentiation noise. |
+| 33–44 | $a_{t-1}$ — previous action | 12 | Policy output at $t-1$ | None | Provides temporal context; lets policy estimate current joint state residual and plan smooth continuations. |
+| 45–47 | $c_t$ — locomotion command | 3 | Command sampler / teleoperation | None | $[v_x^{\text{cmd}}, v_y^{\text{cmd}}, \omega_z^{\text{cmd}}]^\top$; no noise injected since command is internally known. |
+
+**Observation normalization**: During training, observations are normalized by a running mean and variance (`normalize_observations=True`), updated online across all 8192 parallel environments. This improves gradient conditioning and ensures that all 48 dimensions contribute comparably to the loss. The normalization statistics are saved with the checkpoint and applied identically at deployment.
+
+**Design rationale**: The 48-dimensional state deliberately excludes all non-onboard information (foot contact forces, ground truth velocity, world-frame pose). The previous action $a_{t-1}$ substitutes for an explicit foot contact indicator — a policy that learns to maintain consistent action sequences implicitly tracks stance/swing phases through the action history. The gravity vector $\tilde{g}_t^b$ encodes orientation without requiring a full quaternion, and its body-frame expression is invariant to yaw rotation, which matches the yaw-agnostic nature of the locomotion task.
 
 Uniform sensor noise is injected during training via
 $$\tilde{x}_t = x_t + \sigma_{\text{level}} \cdot n_{\text{scale}} \cdot u_t,$$
 where $x_t$ is the true measurement, $\sigma_{\text{level}} = 1.0$ is the noise level multiplier, $n_{\text{scale}}$ is the modality-specific scale factor, and $u_t \sim \mathcal{U}(-1, 1)$ is uniform random noise. Modality-specific noise scales are:
 
-| Sensor | Scale $n_{\text{scale}}$ |
-|--------|----------|
-| Joint position | 0.03 rad |
-| Joint velocity | 1.5 rad/s |
-| Gyroscope | 0.2 rad/s |
-| Inclinometer (gravity) | 0.05 (normalized magnitude) |
-| Linear velocity | 0.1 m/s |
+| Sensor | Scale $n_{\text{scale}}$ | Physical interpretation |
+|--------|----------|---|
+| Joint position | 0.03 rad | $\approx 1.7°$ peak error; typical magnetic encoder quantization + hysteresis |
+| Joint velocity | 1.5 rad/s | Differentiated encoder signal; large noise reflects velocity estimation from position |
+| Gyroscope | 0.2 rad/s | IMU rate noise; 3-sigma corresponds to $\approx 11°$/s |
+| Inclinometer (gravity) | 0.05 (normalized magnitude) | Tilt angle error $\approx 2.9°$; accelerometer-derived tilt noise |
+| Linear velocity | 0.1 m/s | State estimator velocity error; represents VIO drift |
 
 This noise helps the learned policy generalize to real-world sensor measurements and reduces overfitting to noise-free simulation.
 
-An asymmetric actor-critic structure is employed. The policy $\pi_\theta$ receives only the 48-dimensional $o_t$ and operates with onboard-realizable observations (compatible with real robot deployment). The critic $V_\phi$ receives a privileged 123-dimensional state vector
-$$o_t^v \in \mathbb{R}^{123},$$
-which includes the full $o_t$ plus additional noise-free, simulation-only privileged information:
+#### Critic State Vector (Privileged Input)
 
-- Clean gyro, accelerometer, gravity (no noise): +9 dims
-- Clean position, velocity relative to home: +24 dims  
-- Global (world frame) linear velocity: +3 dims
-- Global angular velocity: +3 dims
-- Actuator forces (torques applied by controllers): +12 dims
-- Foot contact states (4 feet): +4 dims
-- Foot linear velocities (xy components): +8 dims
-- Foot air time (accumulated swing duration): +4 dims
-- External perturbation force on torso (if enabled): +3 dims
-- Perturbation indicator (boolean): +1 dim
+An asymmetric actor-critic structure is employed. The policy $\pi_\theta$ receives only the 48-dimensional $o_t$ and operates with onboard-realizable observations (compatible with real robot deployment). The critic $V_\phi$ receives a privileged 123-dimensional state vector
+$$o_t^v = \bigl[o_t,\; s_t^{\text{priv}}\bigr]^\top \in \mathbb{R}^{123},$$
+where $s_t^{\text{priv}} \in \mathbb{R}^{75}$ is simulation-only privileged information appended after $o_t$.
+
+The privileged fields are:
+
+| Index range (in $o_t^v$) | Field | Dims | Source | Notes |
+|:---:|---|:---:|---|---|
+| 0–47 | $o_t$ (actor state, as above) | 48 | Same as actor input | Noisy observations identical to what the policy sees |
+| 48–50 | Clean gyroscope $\omega^b$ | 3 | `gyro` (no noise) | Noise-free IMU angular velocity; helps critic estimate accurate body dynamics |
+| 51–53 | Accelerometer $a^b$ | 3 | `accelerometer` (no noise) | Linear acceleration in body frame; not in actor state at all |
+| 54–56 | Clean gravity vector $g^b$ | 3 | Gravity (no noise) | Noise-free gravity direction; removes inclinometer drift from critic's orientation estimate |
+| 57–59 | Clean body-frame linear velocity $v^b$ | 3 | `local_linvel` (no noise) | Noise-free velocity for accurate reward/advantage computation |
+| 60–62 | Global linear velocity $v^W$ | 3 | `global_linvel` | World-frame velocity; unavailable on real robot (no GPS/mocap) |
+| 63–65 | Global angular velocity $\omega^W$ | 3 | `global_angvel` | World-frame angular velocity; complements body-frame gyro |
+| 66–77 | Clean joint positions $q_j - q_j^{\text{home}}$ | 12 | `qpos[7:]` (no noise) | Noise-free offsets; removes 0.03 rad encoder noise from critic's state estimate |
+| 78–89 | Clean joint velocities $\dot{q}_j$ | 12 | `qvel[6:]` (no noise) | Noise-free velocities; removes 1.5 rad/s differentiation noise |
+| 90–101 | Actuator forces $\tau$ | 12 | `actuator_force` | PD torques actually applied; not directly sensed by policy |
+| 102–105 | Foot contact states $m_k$ | 4 | Touch sensors (binary) | Per-foot contact boolean; $m_k \in \{0,1\}$ |
+| 106–117 | Foot linear velocities $v^{\text{foot}}_k$ | 12 | `FEET_SITES` global linvel sensors | 3D foot velocity for each of 4 feet (FR, FL, RR, RL) |
+| 118–121 | Foot air times $T_k^{\text{air}}$ | 4 | Accumulated `feet_air_time` | Time since last contact per foot; accumulated and reset at touchdown |
+| 122–124 | Perturbation force on torso | 3 | `xfrc_applied[torso, :3]` | External force applied during perturbation training; zero if pert disabled |
+| 125 | Perturbation active indicator | 1 | `steps_since_last_pert >= steps_until_next_pert` | Boolean: 1 if perturbation is currently scheduled; helps critic predict disturbed dynamics |
+
+**Total**: $48 + 75 = 123$ dimensions. Note that the foot velocity field is 12-dimensional (3D per foot) in `privileged_state`, while only 8 of those dimensions (xy components) were listed in the original high-level summary; the full 3D velocity including $z$ is included.
+
+**Design rationale for privileged state**: The critic's role during training is to estimate the expected return $V_\phi(o_t^v)$ as accurately as possible for computing GAE advantages. Providing noise-free sensors and simulation-only quantities (actuator forces, foot contacts, perturbation state) directly improves the accuracy of these value estimates without requiring the policy to observe them. The asymmetry is a form of privileged distillation: the critic learns from richer information, generating better advantage signals that guide the policy toward better behavior — even though the policy itself will never see those privileged inputs at deployment.
 
 This privileged state improves value function learning, leading to better advantage estimates and more stable training, while the policy remains deployable from onboard sensors only (learning with domain gap).
 
@@ -525,24 +596,67 @@ $$\rho_{\text{air}}
 \qquad
 w_{\text{air}} = 0.1$$
 
+#### Reward Term Reference Table
+
+The full set of 16 reward and penalty terms is summarized below, ordered by functional group. All terms are evaluated at each control step; terms marked "conditional" are multiplied by an indicator that zeroes them when the locomotion command is near zero ($\|c_t\| \leq 0.01$ rad/s or m/s).
+
+| Symbol | Name | Weight $w_i$ | Formula (unnormalized) | Conditional | Purpose |
+|--------|------|:---:|---|:---:|---|
+| $\rho_{\text{track,lin}}$ | Lin. vel. tracking | $+1.0$ | $\exp\!\left(-\frac{\|v_{xy}^{\text{cmd}}-v_{xy}\|^2}{\sigma}\right)$, $\sigma{=}0.25$ | No | Primary task: match forward/lateral speed |
+| $\rho_{\text{track,yaw}}$ | Yaw rate tracking | $+0.5$ | $\exp\!\left(-\frac{(\omega_z^{\text{cmd}}-\omega_z)^2}{\sigma}\right)$, $\sigma{=}0.25$ | No | Primary task: match yaw rate |
+| $\rho_{\text{lin-z}}$ | Vertical vel. | $-0.5$ | $v_z^2$ | No | Suppress vertical bouncing |
+| $\rho_{\text{ang-xy}}$ | Roll/pitch rate | $-0.05$ | $\omega_x^2+\omega_y^2$ | No | Suppress trunk rocking |
+| $\rho_{\text{orient}}$ | Trunk tilt | $-5.0$ | $u_x^2+u_y^2$ (up-vector xy deviation) | No | Strongly penalize non-upright posture |
+| $\rho_{\text{pose}}$ | Joint pose | $+0.5$ | $\exp\!\bigl(-\sum_i \alpha_i(q_i-q_i^{\text{home}})^2\bigr)$ | No | Stay near nominal standing pose |
+| $\rho_{\text{stand}}$ | Stand still | $-1.0$ | $\sum_i|q_i-q_i^{\text{home}}|$ | When $\|c_t\|<0.01$ | No fidgeting when no command |
+| $\rho_{\text{term}}$ | Termination | $-1.0$ | $d_t \in \{0,1\}$ (fall indicator) | No | Immediate penalty for episode-ending fall |
+| $\rho_{\text{limit}}$ | Joint limits | $-1.0$ | $\sum_i[\underline{q}^s_i - q_i]_+ + [q_i - \bar{q}^s_i]_+$ | No | Stay within 95% of mechanical range |
+| $\rho_{\tau}$ | Torque | $-0.0002$ | $\sqrt{\sum\tau_i^2}+\sum|\tau_i|$ (L2+L1) | No | Reduce peak and sustained torque use |
+| $\rho_{\text{act}}$ | Action rate | $-0.01$ | $\sum_i(a_{t,i}-a_{t-1,i})^2$ | No | Penalize rapid action changes (jerk proxy) |
+| $\rho_{\text{energy}}$ | Energy | $-0.001$ | $\sum_i|\dot{q}_i||\tau_i|$ | No | Penalize mechanical power consumption |
+| $\rho_{\text{slip}}$ | Foot slip | $-0.1$ | $\sum_k\|v_{xy,k}^{\text{foot}}\|^2 m_k$ | Yes | Penalize lateral velocity of grounded feet |
+| $\rho_{\text{clr}}$ | Foot clearance | $-2.0$ | $\sum_k|z_k^{\text{foot}}-h^\star|\sqrt{\|v_{xy,k}^{\text{foot}}\|}$ | No | Feet should swing at $h^\star{=}0.1$ m |
+| $\rho_{\text{fh}}$ | Swing peak height | $-0.2$ | $\sum_k\!\left(\frac{h_k^{\text{peak}}}{h^\star}-1\right)^2\!\delta_k$ | Yes | Normalize peak swing height to $h^\star$ |
+| $\rho_{\text{air}}$ | Foot air time | $+0.1$ | $\sum_k(T_k^{\text{air}}-0.1)\delta_k$ | Yes | Encourage sufficient stance–swing cycle |
+
+**Notes on key design choices:**
+- **Tracking kernel**: the Gaussian form $\exp(-e^2/\sigma)$ gives reward 1 at perfect tracking ($e=0$), reward $e^{-1}\!\approx 0.37$ at error $\sqrt{\sigma}=0.5$ m/s, and approaches 0 for large errors. This saturates the gradient at large errors to avoid destabilizing updates.
+- **Clearance weighting**: $\rho_{\text{clr}}$ multiplies the height error by $\sqrt{\|v_{xy}\|}$ rather than a contact indicator, so it penalizes clearance violations specifically while the foot is moving horizontally — it is automatically silent for a stationary foot and largest during mid-swing.
+- **Torque L2+L1**: the combined $\sqrt{\sum\tau^2} + \sum|\tau|$ penalizes both peak torque (via L2) and overall torque magnitude (via L1), discouraging both brief spikes and sustained high torques.
+- **Action rate as jerk proxy**: $\rho_{\text{act}} = \sum(a_t - a_{t-1})^2$ penalizes the first-order finite difference of the action. Since actions map to position targets, this approximates joint velocity overshoot rather than true mechanical jerk.
+- **Pose weighting**: the per-joint weight vector $\alpha = [1,1,0.1]\times 4$ downweights knee joints (index 3 per leg, $\alpha=0.1$) relative to hip and abduction joints ($\alpha=1.0$), allowing more knee variation during locomotion while keeping the upper leg close to the nominal configuration.
+- **Stand-still vs. pose**: $\rho_{\text{stand}}$ activates only at zero command (no movement requested) and uses the L1 norm to keep all joints near home, while $\rho_{\text{pose}}$ is always active and uses a Gaussian (soft) reward — together they prevent both idling drift and aggressive posture deviation during locomotion.
+
+#### Reward Scaling and Total Magnitude
+
+The total per-step reward is
+$$r_t = \text{clip}\!\left(\Delta t \sum_{i=1}^{16} w_i\,\rho_i(t),\ 0,\ 10{,}000\right), \qquad \Delta t = 0.02 \text{ s}.$$
+
+Multiplying by $\Delta t$ converts the weighted sum from a per-step basis to a per-second basis, making the reward roughly unit-consistent across different control frequencies. In practice, a well-behaved policy achieves:
+- Tracking terms contributing approximately $\Delta t \times (1.0\cdot 0.9 + 0.5\cdot 0.9) \approx 0.027$ per step (near-perfect tracking, $\approx 1.35$ per second).
+- Energy and regularization terms contributing small negative values ($\lesssim -0.005$ per step at typical operation).
+- The net reward per step is thus dominated by tracking performance, ensuring that command following is the primary optimization target.
+
+The lower clip at 0 is primarily a safety measure against rare numerical instability; normal operation never triggers it because the positive tracking terms dominate. The upper clip at 10,000 is never reached in practice.
+
 ### Summary and Integration
 
 The tracking terms ($\rho_{\text{track,lin}}, \rho_{\text{track,yaw}}$) encourage the robot to follow commanded forward, lateral, and yaw velocities, forming the primary task objective. These use Gaussian kernels with tracking $\sigma = 0.25$ to reward close tracking over perfect tracking.
 
 The base motion penalties ($\rho_{\text{lin-z}}, \rho_{\text{ang-xy}}, \rho_{\text{orient}}$) constrain unwanted motions: vertical drift, sideways tilting, and forward/backward tilting respectively, ensuring stable upright locomotion.
 
-The posture terms ($\rho_{\text{pose}}, \rho_{\text{stand}}$) maintain the robot near a nominal standing configuration with weighted per-joint penalties (lower weight for lateral motions which have less stability contribution). The stand-still term penalizes posture deviation when no command is given.
+The posture terms ($\rho_{\text{pose}}, \rho_{\text{stand}}$) maintain the robot near a nominal standing configuration with weighted per-joint penalties (lower weight for knee joints which need more range during locomotion). The stand-still term penalizes posture deviation only when no command is given.
 
 The termination penalty ($\rho_{\text{term}}$) flags episode-ending falls, providing immediate negative signal for instability. Joint limit penalties ($\rho_{\text{limit}}$) prevent unsafe configurations by penalizing soft limits at 95% of mechanical range.
 
-Energy penalties ($\rho_{\tau}, \rho_{\text{act}}, \rho_{\text{energy}}$) reduce aggressive, jerky, or power-hungry control. Torque penalty uses both L2 and L1 norms; action-rate penalizes accelerations; energy combines joint velocity and torque magnitudes.
+Energy penalties ($\rho_{\tau}, \rho_{\text{act}}, \rho_{\text{energy}}$) reduce aggressive, jerky, or power-hungry control. Torque penalty uses both L2 and L1 norms to suppress both peak torques and sustained high torque; action-rate penalizes the squared first-order difference of consecutive actions as a proxy for joint jerk; energy penalizes mechanical power $\sum|\dot{q}_i||\tau_i|$ directly.
 
 The foot-related terms constitute a gait-shaping subsystem:
-- **Slip penalty** ($\rho_{\text{slip}}$): Slipping feet consume energy; active only when moving ($ \|c_t\| > 0.01$)
-- **Clearance penalty** ($\rho_{\text{clr}}$): Swing-leg feet should maintain target height $h^\star = 0.1$ m to avoid stumbling
-- **Foot height penalty** ($\rho_{\text{fh}}$): Overly high swings waste energy and destabilize; penalizes deviation from target height at touchdown
-- **Air time reward** ($\rho_{\text{air}}$): Positive reward for swing phase, encouraging liftoff and clear ground clearance, only when moving
+- **Slip penalty** ($\rho_{\text{slip}}$): Slipping feet consume energy; active only when moving ($\|c_t\| > 0.01$)
+- **Clearance penalty** ($\rho_{\text{clr}}$): Swing-leg feet should maintain target height $h^\star = 0.1$ m; weighted by $\sqrt{\|v_{xy}\|}$ so it is silent for stationary feet and maximal during mid-swing
+- **Foot height penalty** ($\rho_{\text{fh}}$): Penalizes the squared relative deviation of the peak swing height from $h^\star$ at the moment of touchdown; discourages both under- and over-swinging
+- **Air time reward** ($\rho_{\text{air}}$): Positive reward proportional to air time in excess of 0.1 s, encouraging liftoff and clear ground clearance, active only when moving
 
-Together, the reward function embeds domain knowledge about quadruped locomotion into a learnable optimization landscape. The weighting vector $\mathbf{w} = [w_1, \ldots, w_{14}]^\top$ balances competing objectives, allowing the trainable policy to discover energy-efficient, stable, command-tracking gaits.
+Together, the reward function embeds domain knowledge about quadruped locomotion into a learnable optimization landscape. The weighting vector $\mathbf{w} = [w_1, \ldots, w_{16}]^\top$ balances competing objectives, allowing the trainable policy to discover energy-efficient, stable, command-tracking gaits.
 
 **Overall Training Loop**: At each PPO update step, trajectories are collected from 8192 parallel environments over 20 timesteps. Rewards are accumulated and discounted; advantages are estimated from value function; policy and value networks are updated via gradient descent (with clipping) over 4 epochs of 32 mini-batches each. The process repeats for 200M environment steps, with periodic evaluation on unseen command sequences. The learned policy $\pi_\theta$ outputs smooth, continuous actions converted to joint positions by the PD controller, producing coordinated quadruped locomotion.
