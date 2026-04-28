@@ -195,7 +195,51 @@ def _compute_base_velocity(mj_data) -> np.ndarray:
   return np.array([body_vel[0], body_vel[1], body_ang[2]])
 
 
-def _generate_plots(time_history, cmd_history, vel_history, joint_history, joint_names, output_dir):
+def _get_foot_contacts(mj_model, mj_data) -> np.ndarray:
+  """Detect which feet are in contact with the ground.
+  
+  Returns:
+    np.ndarray: [FR, FL, RR, RL] binary contact array (1 = contact, 0 = air)
+  """
+  foot_sites = ['FR', 'FL', 'RR', 'RL']
+  contacts = np.zeros(4, dtype=np.float32)
+  
+  # Method: Check foot site z-positions
+  # When foot is on ground, site z-position is near 0 (ground level)
+  # When foot is in air, site z-position is higher
+  
+  for foot_idx, site_name in enumerate(foot_sites):
+    try:
+      site_id = mj_model.site(site_name).id
+      # Get site position in world frame
+      site_xpos = mj_data.site_xpos[site_id]
+      foot_z = site_xpos[2]
+      
+      # Foot is in contact if z is close to ground (approximately 0 or negative)
+      # The foot radius is ~0.023m, so contact when z < 0.03
+      if foot_z < 0.03:
+        contacts[foot_idx] = 1.0
+    except Exception as e:
+      # If site lookup fails, try alternative method
+      pass
+  
+  return contacts
+
+
+def _debug_foot_positions(mj_model, mj_data):
+  """Print foot positions for debugging."""
+  foot_sites = ['FR', 'FL', 'RR', 'RL']
+  print("\n=== Foot Positions ===")
+  for site_name in foot_sites:
+    try:
+      site_id = mj_model.site(site_name).id
+      site_xpos = mj_data.site_xpos[site_id]
+      print(f"{site_name}: x={site_xpos[0]:.3f}, y={site_xpos[1]:.3f}, z={site_xpos[2]:.3f}")
+    except Exception as e:
+      print(f"{site_name}: ERROR - {e}")
+
+
+def _generate_plots(time_history, cmd_history, vel_history, joint_history, joint_names, output_dir, contact_history=None):
   """Generate and save plots."""
   if not MATPLOTLIB_AVAILABLE:
     print("Skipping plot generation (matplotlib not available)")
@@ -304,6 +348,87 @@ def _generate_plots(time_history, cmd_history, vel_history, joint_history, joint
     fig3.savefig(output_dir / 'joint_heatmap.png', dpi=150, bbox_inches='tight')
     plt.close(fig3)
     print(f"Saved: {output_dir / 'joint_heatmap.png'}")
+  
+  # Plot 4: Gait Phase Diagram (single walk cycle, normalized to 0-1)
+  if contact_history and len(contact_history) > 0:
+    contact_arr = np.array(contact_history)
+    time_arr = np.array(time_history)
+    
+    # FL leg index is 1 (FR=0, FL=1, RR=2, RL=3)
+    fl_idx = 1
+    fl_signal = contact_arr[:, fl_idx]
+    
+    # Find the first time FL enters support (contact = 1)
+    cycle_start_idx = None
+    for i in range(len(fl_signal)):
+      if fl_signal[i] > 0.5:
+        cycle_start_idx = i
+        break
+    
+    if cycle_start_idx is not None:
+      # Find the NEXT time FL exits support (goes from 1 to 0) after cycle_start
+      # This gives us exactly ONE cycle
+      cycle_end_idx = None
+      for i in range(cycle_start_idx + 1, len(fl_signal)):
+        if fl_signal[i] < 0.5 and fl_signal[i-1] > 0.5:
+          cycle_end_idx = i
+          break
+    # Only generate plot if we have a valid single cycle
+    if cycle_start_idx is not None and cycle_end_idx is not None and cycle_end_idx > cycle_start_idx:
+      # Extract the cycle data
+      cycle_time = time_arr[cycle_start_idx:cycle_end_idx + 1]
+      cycle_contacts = contact_arr[cycle_start_idx:cycle_end_idx + 1]
+      
+      # Normalize time to 0-1
+      cycle_duration = cycle_time[-1] - cycle_time[0]
+      if cycle_duration > 0:
+        normalized_time = (cycle_time - cycle_time[0]) / cycle_duration
+      else:
+        normalized_time = np.linspace(0, 1, len(cycle_time))
+      
+      fig4, ax4 = plt.subplots(figsize=(14, 4))
+      
+      legs = ['FR', 'FL', 'RR', 'RL']
+      y_positions = [3, 2, 1, 0]  # Bottom to top
+      
+      for leg_idx, (leg, y_pos) in enumerate(zip(legs, y_positions)):
+        contact_signal = cycle_contacts[:, leg_idx]
+        
+        # Create horizontal bars for contact intervals
+        in_contact = False
+        start_norm = 0.0
+        
+        for t_idx in range(len(normalized_time)):
+          if contact_signal[t_idx] > 0.5 and not in_contact:
+            # Start of support phase
+            start_norm = normalized_time[t_idx]
+            in_contact = True
+          elif contact_signal[t_idx] <= 0.5 and in_contact:
+            # End of support phase
+            ax4.barh(y_pos, normalized_time[t_idx] - start_norm, left=start_norm, 
+                    height=0.6, color='#2ca02c', alpha=0.8)
+            in_contact = False
+          elif t_idx == len(normalized_time) - 1 and in_contact:
+            # Handle case where contact continues to end
+            ax4.barh(y_pos, normalized_time[t_idx] - start_norm, left=start_norm, 
+                    height=0.6, color='#2ca02c', alpha=0.8)
+      
+      ax4.set_yticks(y_positions)
+      ax4.set_yticklabels(legs)
+      ax4.set_xlabel('Normalized Time (cycle fraction)')
+      ax4.set_ylabel('Leg')
+      ax4.set_title('Gait Phase Diagram', 
+                    fontsize=14, fontweight='bold')
+      ax4.set_xlim(0, 1)
+      ax4.set_ylim(-0.5, 3.5)
+      ax4.grid(True, alpha=0.3, axis='x')
+      
+      plt.tight_layout()
+      fig4.savefig(output_dir / 'gait_phase_diagram.png', dpi=150, bbox_inches='tight')
+      plt.close(fig4)
+      print(f"Saved: {output_dir / 'gait_phase_diagram.png'}")
+    else:
+      print("Warning: Could not find complete FL walk cycle, skipping gait phase diagram")
   
   print(f"\nAll plots saved to: {output_dir}")
 
@@ -424,6 +549,7 @@ def main():
   cmd_history = []  # Commanded velocities
   vel_history = []  # Simulated velocities
   joint_history = []  # Joint angles
+  contact_history = []  # Foot contacts [FR, FL, RR, RL]
 
   print("\n=== Go1 Live Keyboard Teleop with Plotting ===")
   print("Focus the terminal window for controls:")
@@ -458,7 +584,7 @@ def main():
         elif key == "p":
           # Generate plots on demand
           print("\nGenerating plots...")
-          _generate_plots(time_history, cmd_history, vel_history, joint_history, joint_names, plot_dir)
+          _generate_plots(time_history, cmd_history, vel_history, joint_history, joint_names, plot_dir, contact_history)
         elif key == "w":
           x_vel += dv
         elif key == "s":
@@ -499,7 +625,6 @@ def main():
         # Time
         time_history.append(float(mj_data.time))
         
-        # Commanded velocity
         cmd_history.append([x_vel, y_vel, yaw_vel])
         
         # Simulated velocity (computed from MuJoCo state)
@@ -509,15 +634,30 @@ def main():
         # Joint angles (skip free joint qpos[:6] = [x, y, z, qw, qx, qy, qz])
         joint_angles = np.asarray(mj_data.qpos[7:]).tolist()
         joint_history.append(joint_angles)
+        
+        # Foot contacts (support vs transition phase)
+        foot_contacts = _get_foot_contacts(mj_model, mj_data)
+        contact_history.append(foot_contacts.tolist())
 
       now = time.perf_counter()
       if now - last_print > 0.25:
+        # Debug: show foot contact status
+        foot_z_str = ""
+        for site_name in ['FR', 'FL', 'RR', 'RL']:
+          try:
+            site_id = mj_model.site(site_name).id
+            z = mj_data.site_xpos[site_id][2]
+            c = "S" if z < 0.03 else "T"
+            foot_z_str += f"{site_name}:{z:.3f}{c} "
+          except:
+            foot_z_str += f"{site_name}:? "
         print(
             f"\rcommand = [{x_vel:+.2f}, {y_vel:+.2f}, {yaw_vel:+.2f}]   "
             f"reward = {float(state.reward):+.3f}   "
             f"time = {float(state.data.time):.2f}s   "
             f"rtf = {rtf:.2f}   "
-            f"records = {len(time_history)}",
+            f"records = {len(time_history)}   "
+            f"{foot_z_str}",
             end="",
             flush=True,
         )
@@ -535,7 +675,7 @@ def main():
   # Generate plots on exit
   if time_history:
     print(f"\nGenerating plots from {len(time_history)} recorded timesteps...")
-    _generate_plots(time_history, cmd_history, vel_history, joint_history, joint_names, plot_dir)
+    _generate_plots(time_history, cmd_history, vel_history, joint_history, joint_names, plot_dir, contact_history)
   else:
     print("No data recorded, skipping plot generation.")
 
