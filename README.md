@@ -125,7 +125,6 @@ python scripts/teleop_go1_keyboard.py \
 
 ## Key Features
 
-- **Asymmetric Actor-Critic**: Policy sees 48-dim onboard observations; critic accesses 123-dim privileged state
-- **Domain Randomization**: Per-episode randomization of friction, inertia, CoM, mass
+
 - **Gait Shaping**: Foot clearance, slip, air-time, and energy penalties
 - **JAX/MJX**: Fully differentiable with `jax.vmap` for efficient 8192-parallel training
