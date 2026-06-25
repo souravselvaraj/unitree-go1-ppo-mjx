@@ -166,15 +166,10 @@ ppo, mujoco, mjx, jax, brax, robotics, domain-randomization, sim-to-real
 `go1_ppo` is a reasonable Python package name, but for the public GitHub repo a
 hyphenated name with `unitree`, `go1`, `ppo`, and `mjx` will be easier to find.
 
-## Publish Checklist
-
-- Keep generated `logs/`, `runs/`, `wandb/`, checkpoints, videos, and Python caches out of git.
-- Keep the small source assets in `go1_ppo/assets/` committed so MJCF files load without external paths.
-- Add trained policies as release artifacts instead of committing checkpoint directories.
-- Verify `uv run python -c "import go1_ppo"` and MuJoCo model loading after fresh clones.
 
 ## License
 
-This project follows the Apache-2.0 license used by the MuJoCo/MJX-derived
-source files. Confirm that any added robot assets, textures, or trained policies
-are redistributable before publishing them publicly.
+Original project code is licensed under Apache-2.0. Some files are adapted from
+DeepMind/MuJoCo Apache-2.0 code, and the vendored Unitree Go1 model assets retain
+their BSD-3-Clause license. See [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
