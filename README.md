@@ -7,6 +7,8 @@ randomization, and flat or rough-terrain MJCF environments.
 See [modeling_section.md](modeling_section.md) for the environment design,
 reward terms, observation spaces, and training architecture.
 
+Repository: [souravselvaraj/unitree-go1-ppo-mjx](https://github.com/souravselvaraj/unitree-go1-ppo-mjx.git)
+
 ## Demo
 
 ![Unitree Go1 PPO locomotion demo](docs/media/go1_locomotion_demo.gif)
@@ -42,8 +44,8 @@ Requirements:
 Install:
 
 ```bash
-git clone https://github.com/<your-user>/<repo-name>.git
-cd <repo-name>
+git clone https://github.com/souravselvaraj/unitree-go1-ppo-mjx.git
+cd unitree-go1-ppo-mjx
 uv sync
 ```
 
@@ -135,22 +137,15 @@ Keyboard controls:
 └── uv.lock              # Reproducible dependency lockfile
 ```
 
-## GitHub Search Setup
+## Repository Metadata
 
-Recommended repository name:
+Repository name:
 
 ```text
 unitree-go1-ppo-mjx
 ```
 
-Good shorter alternatives:
-
-```text
-go1-ppo-mjx
-unitree-go1-ppo
-```
-
-Use this GitHub description:
+GitHub description:
 
 ```text
 PPO locomotion training for the Unitree Go1 quadruped using JAX, Brax, MuJoCo MJX, and domain randomization.
@@ -165,7 +160,6 @@ ppo, mujoco, mjx, jax, brax, robotics, domain-randomization, sim-to-real
 
 `go1_ppo` is a reasonable Python package name, but for the public GitHub repo a
 hyphenated name with `unitree`, `go1`, `ppo`, and `mjx` will be easier to find.
-
 
 ## License
 
