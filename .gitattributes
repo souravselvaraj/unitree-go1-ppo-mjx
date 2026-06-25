@@ -1,0 +1,5 @@
+*.png binary
+*.stl binary
+
+go1_ppo/assets/*.png linguist-vendored
+go1_ppo/assets/*.stl linguist-vendored

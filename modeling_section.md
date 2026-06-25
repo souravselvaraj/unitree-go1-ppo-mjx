@@ -37,7 +37,7 @@ so each control action is held for 5 physics substeps. Each episode lasts 1000 c
 
 ### Rough Terrain Environment
 
-A second terrain variant, `Go1JoystickRoughTerrain`, replaces the flat plane with a procedurally generated heightfield loaded from a PNG image (`assets/hfield.png`). The terrain is modeled as a MuJoCo `hfield` geom with world dimensions
+A second terrain variant, `Go1JoystickRoughTerrain`, replaces the flat plane with a procedurally generated heightfield loaded from a PNG image (`go1_ppo/assets/hfield.png`). The terrain is modeled as a MuJoCo `hfield` geom with world dimensions
 
 $$\text{width} \times \text{height} = 10 \times 10 \text{ m}, \quad h_{\max} = 0.05 \text{ m}, \quad \text{base depth} = 1.0 \text{ m}.$$
 

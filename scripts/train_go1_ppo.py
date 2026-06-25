@@ -18,8 +18,8 @@ from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.ppo import train as ppo_train
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT.parent) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT.parent))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from go1_ppo import registry, wrapper
 from go1_ppo.configs import locomotion_params

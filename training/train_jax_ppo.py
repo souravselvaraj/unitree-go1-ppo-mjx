@@ -24,8 +24,8 @@ import mujoco
 import tensorboardX
 
 PROJECT_ROOT = epath.Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT.parent) not in sys.path:
-  sys.path.insert(0, str(PROJECT_ROOT.parent))
+if str(PROJECT_ROOT) not in sys.path:
+  sys.path.insert(0, str(PROJECT_ROOT))
 
 from go1_ppo import registry  # noqa: E402
 from go1_ppo import wrapper  # noqa: E402

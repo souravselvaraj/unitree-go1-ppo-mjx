@@ -20,8 +20,8 @@ from orbax import checkpoint as ocp
 
 from brax.training.agents.ppo import checkpoint as ppo_checkpoint
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT.parent) not in sys.path:
-  sys.path.insert(0, str(PROJECT_ROOT.parent))
+if str(PROJECT_ROOT) not in sys.path:
+  sys.path.insert(0, str(PROJECT_ROOT))
 
 from go1_ppo import registry  # noqa: E402
 from go1_ppo.configs import locomotion_params  # noqa: E402

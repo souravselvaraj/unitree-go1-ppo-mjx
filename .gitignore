@@ -1,3 +1,40 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+
+# Virtual environments and packaging
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+# Training outputs
+logs/
+runs/
+wandb/
+checkpoints/
+*.tfevents.*
+events.out.tfevents.*
+*.ckpt
+*.mp4
+progress.csv
+final_metrics.json
+env_config.json
+ppo_config.json
+
+# Local dependencies fetched at runtime
+external_deps/
+
+# Local machine files
+.DS_Store
+.env
+.env.*
+!.env.example

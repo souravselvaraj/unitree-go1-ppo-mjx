@@ -5,9 +5,31 @@ build-backend = "hatchling.build"
 [project]
 name = "go1-ppo"
 version = "0.1.0"
-description = "Standalone PPO training workspace for Unitree Go1 locomotion in MuJoCo"
+description = "PPO locomotion training for the Unitree Go1 quadruped with JAX, Brax, and MuJoCo MJX"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
+keywords = [
+    "unitree-go1",
+    "go1",
+    "quadruped",
+    "legged-locomotion",
+    "reinforcement-learning",
+    "ppo",
+    "mujoco",
+    "mjx",
+    "jax",
+    "brax",
+    "robotics",
+    "domain-randomization",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "absl-py",
     "brax>=0.12.5",
@@ -26,7 +48,6 @@ dependencies = [
     "tqdm",
     "warp-lang>=1.12.0",
 ]
-keywords = ["go1", "mujoco", "ppo", "reinforcement learning"]
 
 [[tool.uv.index]]
 name = "mujoco"
