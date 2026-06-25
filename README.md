@@ -45,15 +45,16 @@ Install:
 git clone https://github.com/<your-user>/<repo-name>.git
 cd <repo-name>
 uv sync
-source .venv/bin/activate
 ```
+
+The commands below use `uv run`, so activating `.venv` is optional.
 
 ## Training
 
 Quick smoke test:
 
 ```bash
-python training/train_jax_ppo.py \
+uv run python training/train_jax_ppo.py \
   --env_name=Go1JoystickFlatTerrain \
   --use_tb=True \
   --num_timesteps=10000 \
@@ -63,7 +64,7 @@ python training/train_jax_ppo.py \
 Full flat-terrain training:
 
 ```bash
-python training/train_jax_ppo.py \
+uv run python training/train_jax_ppo.py \
   --env_name=Go1JoystickFlatTerrain \
   --use_tb=True \
   --domain_randomization=True
@@ -72,7 +73,7 @@ python training/train_jax_ppo.py \
 Rough-terrain training:
 
 ```bash
-python training/train_jax_ppo.py \
+uv run python training/train_jax_ppo.py \
   --env_name=Go1JoystickRoughTerrain \
   --use_tb=True \
   --domain_randomization=True
@@ -86,7 +87,7 @@ specific policy.
 ## Monitoring
 
 ```bash
-tensorboard --logdir ./logs --port 6006
+uv run tensorboard --logdir ./logs --port 6006
 ```
 
 Open `http://localhost:6006` to view live training metrics.
@@ -96,7 +97,7 @@ Open `http://localhost:6006` to view live training metrics.
 Run a trained policy with keyboard control:
 
 ```bash
-python scripts/teleop_go1_keyboard.py \
+uv run python scripts/teleop_go1_keyboard.py \
   --run_dir ./logs/<Go1Joystick...run> \
   --env Go1JoystickRoughTerrain \
   --deterministic
@@ -170,7 +171,7 @@ hyphenated name with `unitree`, `go1`, `ppo`, and `mjx` will be easier to find.
 - Keep generated `logs/`, `runs/`, `wandb/`, checkpoints, videos, and Python caches out of git.
 - Keep the small source assets in `go1_ppo/assets/` committed so MJCF files load without external paths.
 - Add trained policies as release artifacts instead of committing checkpoint directories.
-- Verify `python -c "import go1_ppo"` and MuJoCo model loading after fresh clones.
+- Verify `uv run python -c "import go1_ppo"` and MuJoCo model loading after fresh clones.
 
 ## License
 
