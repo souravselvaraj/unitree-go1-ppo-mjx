@@ -7,6 +7,12 @@ randomization, and flat or rough-terrain MJCF environments.
 See [modeling_section.md](modeling_section.md) for the environment design,
 reward terms, observation spaces, and training architecture.
 
+## Demo
+
+![Unitree Go1 PPO locomotion demo](docs/media/go1_locomotion_demo.gif)
+
+Trimmed real-world Go1 locomotion demo from the clean walking segment.
+
 ## Why This Repo
 
 - Unitree Go1 quadruped locomotion in MuJoCo MJX
