@@ -39,7 +39,7 @@ Requirements:
 
 - Python 3.12
 - `uv`
-- NVIDIA GPU with CUDA is recommended for serious training
+- NVIDIA GPU with CUDA 
 
 Install:
 
