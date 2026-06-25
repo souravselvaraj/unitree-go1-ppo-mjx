@@ -11,7 +11,7 @@ reward terms, observation spaces, and training architecture.
 
 ![Unitree Go1 PPO locomotion demo](docs/media/go1_locomotion_demo.gif)
 
-Trimmed real-world Go1 locomotion demo from the clean walking segment.
+Trimmed real-world Go1 locomotion demo from the clean walking segment (`00:00:07`-`00:00:27`).
 
 ## Why This Repo
 
