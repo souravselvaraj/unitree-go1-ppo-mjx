@@ -137,29 +137,6 @@ Keyboard controls:
 └── uv.lock              # Reproducible dependency lockfile
 ```
 
-## Repository Metadata
-
-Repository name:
-
-```text
-unitree-go1-ppo-mjx
-```
-
-GitHub description:
-
-```text
-PPO locomotion training for the Unitree Go1 quadruped using JAX, Brax, MuJoCo MJX, and domain randomization.
-```
-
-Suggested GitHub topics:
-
-```text
-unitree-go1, quadruped-robot, legged-locomotion, reinforcement-learning,
-ppo, mujoco, mjx, jax, brax, robotics, domain-randomization, sim-to-real
-```
-
-`go1_ppo` is a reasonable Python package name, but for the public GitHub repo a
-hyphenated name with `unitree`, `go1`, `ppo`, and `mjx` will be easier to find.
 
 ## License
 
